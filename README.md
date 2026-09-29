@@ -61,9 +61,7 @@ src/inviteflow/
 └── workers/      Worker 执行 Hook 的扩展点
 ```
 
-详细功能设计见：
-
-- [`reports/CODEX_INVITATION_DEVELOPMENT_DESIGN.zh-CN.md`](../reports/CODEX_INVITATION_DEVELOPMENT_DESIGN.zh-CN.md)
+详细功能设计见 [`docs/HOOK_CONTRACTS.md`](docs/HOOK_CONTRACTS.md)。完整的产品级开发设计稿保留在工作区的 `reports/CODEX_INVITATION_DEVELOPMENT_DESIGN.zh-CN.md`。
 
 ## 开发约束
 
