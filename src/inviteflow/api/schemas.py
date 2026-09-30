@@ -22,10 +22,6 @@ class ReconcileRequest(BaseModel):
     reason: Annotated[str, Field(min_length=1, max_length=500)]
 
 
-class DealerLookupRequest(BaseModel):
-    code: Annotated[str, Field(min_length=1, max_length=256)]
-
-
 class HookResponse(BaseModel):
     hook: str
     status: str

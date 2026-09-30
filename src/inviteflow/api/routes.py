@@ -9,10 +9,10 @@ from inviteflow.api.schemas import (
     CdkBatchRequest,
     ClaimActionRequest,
     ClaimBatchRequest,
-    DealerLookupRequest,
     ReconcileRequest,
 )
 from inviteflow.domain.hooks import HookRegistry, HookNotImplementedError
+from inviteflow.domain.roles import Role
 
 public_router = APIRouter(tags=["system"])
 api_router = APIRouter()
@@ -45,6 +45,7 @@ async def capabilities(request: Request) -> dict[str, object]:
         "version": "0.1.0",
         "business_hooks_enabled": settings.business_hooks_enabled,
         "implemented": [],
+        "supported_roles": [role.value for role in Role],
         "reserved_hooks": [
             "cdk.validate",
             "cdk.reserve",
@@ -61,8 +62,6 @@ async def capabilities(request: Request) -> dict[str, object]:
             "claim.follow_up",
             "admin.create_cdk_batch",
             "admin.reconcile_claim",
-            "dealer.lookup_cdk",
-            "dealer.probe_resend",
         ],
     }
 
@@ -121,24 +120,6 @@ async def reconcile_claim(
 ) -> dict[str, object]:
     data = await hooks.admin.reconcile_claim(claim_id, actor_id="admin-session")
     return {"status": "accepted", "reason": payload.reason, "data": data}
-
-
-@api_router.post("/dealer/cdks/lookup", tags=["dealer"])
-async def dealer_lookup(
-    payload: DealerLookupRequest,
-    hooks: HookRegistry = Depends(get_hooks),
-) -> dict[str, object]:
-    data = await hooks.dealer.lookup_cdk(payload.code, actor_id="dealer-session")
-    return {"status": "ok", "data": data}
-
-
-@api_router.post("/dealer/claims/{claim_id}/probe-resend", status_code=202, tags=["dealer"])
-async def dealer_probe_resend(
-    claim_id: UUID,
-    hooks: HookRegistry = Depends(get_hooks),
-) -> dict[str, object]:
-    data = await hooks.dealer.probe_resend(claim_id, actor_id="dealer-session")
-    return {"status": "accepted", "data": data}
 
 
 async def hook_not_implemented_handler(_: Request, exc: HookNotImplementedError) -> JSONResponse:

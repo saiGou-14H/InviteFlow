@@ -52,12 +52,6 @@ class AdminHook(Protocol):
     async def reconcile_claim(self, claim_id: UUID, *, actor_id: str) -> dict[str, Any]: ...
 
 
-class DealerHook(Protocol):
-    async def lookup_cdk(self, code: str, *, actor_id: str) -> dict[str, Any]: ...
-
-    async def probe_resend(self, claim_id: UUID, *, actor_id: str) -> dict[str, Any]: ...
-
-
 class InvitationOutcome(str, Enum):
     CONFIRMED_SUCCESS = "confirmed_success"
     CONFIRMED_NO_EFFECT = "confirmed_no_effect"
@@ -137,21 +131,12 @@ class NotImplementedAdminHook:
         raise HookNotImplementedError("admin.reconcile_claim")
 
 
-class NotImplementedDealerHook:
-    async def lookup_cdk(self, code: str, *, actor_id: str) -> dict[str, Any]:
-        raise HookNotImplementedError("dealer.lookup_cdk")
-
-    async def probe_resend(self, claim_id: UUID, *, actor_id: str) -> dict[str, Any]:
-        raise HookNotImplementedError("dealer.probe_resend")
-
-
 @dataclass(slots=True)
 class HookRegistry:
     cdk: CdkHook
     resource: ResourceHook
     claims: ClaimHook
     admin: AdminHook
-    dealer: DealerHook
 
     @classmethod
     def placeholders(cls) -> "HookRegistry":
@@ -160,5 +145,4 @@ class HookRegistry:
             resource=NotImplementedResourceHook(),
             claims=NotImplementedClaimHook(),
             admin=NotImplementedAdminHook(),
-            dealer=NotImplementedDealerHook(),
         )
