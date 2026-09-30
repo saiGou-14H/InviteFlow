@@ -14,6 +14,7 @@ from inviteflow.api.schemas import (
 from inviteflow.auth import Actor, require_admin, require_user
 from inviteflow.domain.hooks import HookNotImplementedError, HookRegistry
 from inviteflow.domain.roles import Role
+from inviteflow.idempotency import require_idempotency_key
 
 public_router = APIRouter(tags=["system"])
 api_router = APIRouter()
@@ -29,6 +30,7 @@ def get_hooks(request: Request) -> HookRegistry:
 Hooks = Annotated[HookRegistry, Depends(get_hooks)]
 UserActor = Annotated[Actor, Depends(require_user)]
 AdminActor = Annotated[Actor, Depends(require_admin)]
+IdempotencyKey = Annotated[str, Depends(require_idempotency_key)]
 
 
 @public_router.get("/healthz")
@@ -89,9 +91,11 @@ async def capabilities(request: Request) -> dict[str, object]:
 
 @api_router.post("/claims/batches", status_code=202, tags=["claims"])
 async def claim_batch(
-    payload: ClaimBatchRequest, actor: UserActor, hooks: Hooks
+    payload: ClaimBatchRequest, actor: UserActor, hooks: Hooks, _idempotency_key: IdempotencyKey
 ) -> dict[str, object]:
-    data = await hooks.claims.claim_batch(payload.codes, actor_id=str(actor.id))
+    data = await hooks.claims.claim_batch(
+        payload.codes, actor_id=str(actor.id), idempotency_key=_idempotency_key
+    )
     return {"status": "accepted", "data": data}
 
 
@@ -102,38 +106,63 @@ async def claim_snapshot(claim_id: UUID, actor: UserActor, hooks: Hooks) -> dict
 
 
 @api_router.post("/claims/{claim_id}/confirm", status_code=202, tags=["claims"])
-async def confirm_claim(claim_id: UUID, actor: UserActor, hooks: Hooks) -> dict[str, object]:
-    data = await hooks.claims.confirm(claim_id, actor_id=str(actor.id))
+async def confirm_claim(
+    claim_id: UUID, actor: UserActor, hooks: Hooks, _idempotency_key: IdempotencyKey
+) -> dict[str, object]:
+    data = await hooks.claims.confirm(
+        claim_id, actor_id=str(actor.id), idempotency_key=_idempotency_key
+    )
     return {"status": "accepted", "data": data}
 
 
 @api_router.post("/claims/{claim_id}/retry", status_code=202, tags=["claims"])
 async def retry_claim(
-    claim_id: UUID, payload: ClaimActionRequest, actor: UserActor, hooks: Hooks
+    claim_id: UUID,
+    payload: ClaimActionRequest,
+    actor: UserActor,
+    hooks: Hooks,
+    _idempotency_key: IdempotencyKey,
 ) -> dict[str, object]:
-    data = await hooks.claims.retry(claim_id, actor_id=str(actor.id), reason=payload.reason)
+    data = await hooks.claims.retry(
+        claim_id, actor_id=str(actor.id), reason=payload.reason, idempotency_key=_idempotency_key
+    )
     return {"status": "accepted", "data": data}
 
 
 @api_router.post("/claims/{claim_id}/followup", status_code=202, tags=["claims"])
-async def follow_up_claim(claim_id: UUID, actor: UserActor, hooks: Hooks) -> dict[str, object]:
-    data = await hooks.claims.follow_up(claim_id, actor_id=str(actor.id))
+async def follow_up_claim(
+    claim_id: UUID, actor: UserActor, hooks: Hooks, _idempotency_key: IdempotencyKey
+) -> dict[str, object]:
+    data = await hooks.claims.follow_up(
+        claim_id, actor_id=str(actor.id), idempotency_key=_idempotency_key
+    )
     return {"status": "accepted", "data": data}
 
 
 @api_router.post("/admin/cdk-batches", status_code=202, tags=["admin"])
 async def create_cdk_batch(
-    payload: CdkBatchRequest, actor: AdminActor, hooks: Hooks
+    payload: CdkBatchRequest,
+    actor: AdminActor,
+    hooks: Hooks,
+    _idempotency_key: IdempotencyKey,
 ) -> dict[str, object]:
-    data = await hooks.admin.create_cdk_batch(payload.model_dump(), actor_id=str(actor.id))
+    data = await hooks.admin.create_cdk_batch(
+        payload.model_dump(), actor_id=str(actor.id), idempotency_key=_idempotency_key
+    )
     return {"status": "accepted", "data": data}
 
 
 @api_router.post("/admin/claims/{claim_id}/reconcile", status_code=202, tags=["admin"])
 async def reconcile_claim(
-    claim_id: UUID, payload: ReconcileRequest, actor: AdminActor, hooks: Hooks
+    claim_id: UUID,
+    payload: ReconcileRequest,
+    actor: AdminActor,
+    hooks: Hooks,
+    _idempotency_key: IdempotencyKey,
 ) -> dict[str, object]:
-    data = await hooks.admin.reconcile_claim(claim_id, actor_id=str(actor.id))
+    data = await hooks.admin.reconcile_claim(
+        claim_id, actor_id=str(actor.id), idempotency_key=_idempotency_key, reason=payload.reason
+    )
     return {"status": "accepted", "reason": payload.reason, "data": data}
 
 

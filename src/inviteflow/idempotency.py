@@ -1,9 +1,8 @@
-"""Idempotency for database-only commands, not external calls or arbitrary Hooks.
+"""Idempotency for database-only commands, never external calls or arbitrary Hooks.
 
-Handlers MUST use the supplied transaction, never commit it or call a provider.
-They must authorize the actor/object on every request, including before replay.
-Responses must be safe projections: never store raw codes, cookies or credentials.
-External actions belong to a future transactional Outbox/Worker integration.
+Handlers MUST use the supplied transaction without committing it. Authorize the
+actor/object before replay. Store only safe response projections, never secrets.
+External actions belong to a transactional Outbox and a reviewed Worker adapter.
 """
 
 import json
@@ -11,7 +10,9 @@ import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import timedelta
+from typing import Annotated
 
+from fastapi import Header, Request
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +30,28 @@ class CommandResult:
 
 
 Command = Callable[[AsyncSession], Awaitable[CommandResult]]
+_KEY = re.compile(r"[A-Za-z0-9._:-]{8,128}")
+
+
+def validate_idempotency_key(key: str | None) -> str:
+    if key is None or not _KEY.fullmatch(key):
+        raise ApiError(400, "INVALID_IDEMPOTENCY_KEY", "需要 8–128 位有效幂等键。")
+    return key
+
+
+def require_idempotency_key(
+    request: Request,
+    key: Annotated[
+        str,
+        Header(
+            alias="Idempotency-Key",
+            description="Required unique command key, 8–128 ASCII characters",
+        ),
+    ],
+) -> str:
+    if len(request.headers.getlist("idempotency-key")) != 1:
+        raise ApiError(400, "INVALID_IDEMPOTENCY_KEY", "幂等键请求头必须且只能出现一次。")
+    return validate_idempotency_key(key)
 
 
 class IdempotencyExecutor:
@@ -42,8 +65,7 @@ class IdempotencyExecutor:
     async def execute(
         self, *, scope: str, key: str, payload: dict[str, object], command: Command
     ) -> CommandResult:
-        if not re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", key):
-            raise ApiError(400, "INVALID_IDEMPOTENCY_KEY", "需要 8–128 位有效幂等键。")
+        key = validate_idempotency_key(key)
         if not 1 <= len(scope) <= 256:
             raise ValueError("scope must identify the actor and command, at most 256 characters")
         canonical = json.dumps(
@@ -65,6 +87,12 @@ class IdempotencyExecutor:
                     IdempotencyRequest.scope == scope, IdempotencyRequest.key_digest == key_hash
                 )
             )
+            # Even expired incomplete/invalid receipts require investigation.
+            # Do not delete one and blindly execute a potentially applied command.
+            if row is not None and (
+                row.response_status is None or not isinstance(row.response_body, dict)
+            ):
+                raise ApiError(409, "IDEMPOTENCY_IN_PROGRESS", "请求状态待查证。")
             if row is not None and row.expires_at <= now:
                 await db.delete(row)
                 await db.flush()
@@ -72,8 +100,7 @@ class IdempotencyExecutor:
             if row is not None:
                 if row.request_digest != request_hash:
                     raise ApiError(409, "IDEMPOTENCY_CONFLICT", "同一幂等键不能用于不同请求内容。")
-                if row.response_status is None or row.response_body is None:
-                    raise ApiError(409, "IDEMPOTENCY_IN_PROGRESS", "请求状态待查证。")
+                assert row.response_status is not None and row.response_body is not None
                 return CommandResult(row.response_status, row.response_body, replayed=True)
             row = IdempotencyRequest(
                 scope=scope,
@@ -89,8 +116,11 @@ class IdempotencyExecutor:
                 raise RuntimeError("Command must not close the supplied transaction")
             if not 200 <= result.status < 300:
                 raise ValueError("Only accepted/successful database commands may be cached")
-            if len(json.dumps(result.body, allow_nan=False).encode()) > 65536:
+            if not isinstance(result.body, dict):
+                raise ValueError("Idempotency receipt must be a JSON object")
+            encoded = json.dumps(result.body, allow_nan=False)
+            if len(encoded.encode()) > 65536:
                 raise ValueError("Idempotency receipt exceeds 64 KiB")
             row.response_status = result.status
-            row.response_body = result.body
+            row.response_body = json.loads(encoded)
             return result

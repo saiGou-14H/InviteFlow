@@ -14,44 +14,48 @@ class HookNotImplementedError(RuntimeError):
 
 class CdkHook(Protocol):
     async def validate(self, code: str) -> dict[str, Any]: ...
-
     async def reserve(self, cdk_id: UUID, claim_id: UUID) -> dict[str, Any]: ...
-
     async def consume(self, cdk_id: UUID, claim_id: UUID) -> dict[str, Any]: ...
-
     async def release(self, cdk_id: UUID, claim_id: UUID, *, reason: str) -> dict[str, Any]: ...
-
     async def revoke(self, cdk_id: UUID, *, actor_id: str, reason: str) -> dict[str, Any]: ...
 
 
 class ResourceHook(Protocol):
     async def acquire(self, claim_id: UUID) -> dict[str, Any]: ...
-
     async def health_check(self, resource_id: UUID) -> dict[str, Any]: ...
-
     async def release(self, resource_id: UUID, *, reason: str) -> dict[str, Any]: ...
-
     async def cleanup(self, resource_id: UUID, *, generation: int) -> dict[str, Any]: ...
 
 
 class ClaimHook(Protocol):
-    async def claim_batch(self, codes: list[str], *, actor_id: str) -> dict[str, Any]: ...
+    """Commands receive a trusted actor and validated key, NOT automatic deduplication.
 
+    Implementations authorize ownership then use IdempotencyExecutor and a single
+    database transaction to enqueue durable operations. No raw key persistence.
+    """
+
+    async def claim_batch(
+        self, codes: list[str], *, actor_id: str, idempotency_key: str
+    ) -> dict[str, Any]: ...
     async def get_snapshot(self, claim_id: UUID, *, actor_id: str) -> dict[str, Any]: ...
-
-    async def confirm(self, claim_id: UUID, *, actor_id: str) -> dict[str, Any]: ...
-
-    async def retry(self, claim_id: UUID, *, actor_id: str, reason: str) -> dict[str, Any]: ...
-
-    async def follow_up(self, claim_id: UUID, *, actor_id: str) -> dict[str, Any]: ...
+    async def confirm(
+        self, claim_id: UUID, *, actor_id: str, idempotency_key: str
+    ) -> dict[str, Any]: ...
+    async def retry(
+        self, claim_id: UUID, *, actor_id: str, idempotency_key: str, reason: str
+    ) -> dict[str, Any]: ...
+    async def follow_up(
+        self, claim_id: UUID, *, actor_id: str, idempotency_key: str
+    ) -> dict[str, Any]: ...
 
 
 class AdminHook(Protocol):
     async def create_cdk_batch(
-        self, payload: dict[str, Any], *, actor_id: str
+        self, payload: dict[str, Any], *, actor_id: str, idempotency_key: str
     ) -> dict[str, Any]: ...
-
-    async def reconcile_claim(self, claim_id: UUID, *, actor_id: str) -> dict[str, Any]: ...
+    async def reconcile_claim(
+        self, claim_id: UUID, *, actor_id: str, idempotency_key: str, reason: str
+    ) -> dict[str, Any]: ...
 
 
 class InvitationOutcome(str, Enum):
@@ -71,9 +75,7 @@ class InvitationProvider(Protocol):
     """Provider boundary for a reviewed external invitation integration."""
 
     async def probe(self, *, operation_id: UUID, resource_id: UUID) -> ProviderResult: ...
-
     async def execute(self, *, operation_id: UUID, resource_id: UUID) -> ProviderResult: ...
-
     async def reconcile(self, *, operation_id: UUID, resource_id: UUID) -> ProviderResult: ...
 
 
@@ -109,27 +111,39 @@ class NotImplementedResourceHook:
 
 
 class NotImplementedClaimHook:
-    async def claim_batch(self, codes: list[str], *, actor_id: str) -> dict[str, Any]:
+    async def claim_batch(
+        self, codes: list[str], *, actor_id: str, idempotency_key: str
+    ) -> dict[str, Any]:
         raise HookNotImplementedError("claim.claim_batch")
 
     async def get_snapshot(self, claim_id: UUID, *, actor_id: str) -> dict[str, Any]:
         raise HookNotImplementedError("claim.get_snapshot")
 
-    async def confirm(self, claim_id: UUID, *, actor_id: str) -> dict[str, Any]:
+    async def confirm(
+        self, claim_id: UUID, *, actor_id: str, idempotency_key: str
+    ) -> dict[str, Any]:
         raise HookNotImplementedError("claim.confirm")
 
-    async def retry(self, claim_id: UUID, *, actor_id: str, reason: str) -> dict[str, Any]:
+    async def retry(
+        self, claim_id: UUID, *, actor_id: str, idempotency_key: str, reason: str
+    ) -> dict[str, Any]:
         raise HookNotImplementedError("claim.retry")
 
-    async def follow_up(self, claim_id: UUID, *, actor_id: str) -> dict[str, Any]:
+    async def follow_up(
+        self, claim_id: UUID, *, actor_id: str, idempotency_key: str
+    ) -> dict[str, Any]:
         raise HookNotImplementedError("claim.follow_up")
 
 
 class NotImplementedAdminHook:
-    async def create_cdk_batch(self, payload: dict[str, Any], *, actor_id: str) -> dict[str, Any]:
+    async def create_cdk_batch(
+        self, payload: dict[str, Any], *, actor_id: str, idempotency_key: str
+    ) -> dict[str, Any]:
         raise HookNotImplementedError("admin.create_cdk_batch")
 
-    async def reconcile_claim(self, claim_id: UUID, *, actor_id: str) -> dict[str, Any]:
+    async def reconcile_claim(
+        self, claim_id: UUID, *, actor_id: str, idempotency_key: str, reason: str
+    ) -> dict[str, Any]:
         raise HookNotImplementedError("admin.reconcile_claim")
 
 

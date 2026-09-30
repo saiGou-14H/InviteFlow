@@ -26,6 +26,10 @@ ClaimWorkflow
 
 接口定义位于 `src/inviteflow/domain/hooks.py`。
 
+所有通过 HTTP 暴露的 ClaimHook/AdminHook 写方法新增必填关键字参数 `idempotency_key`；`get_snapshot` 为只读，不接收该参数。管理员 `reconcile_claim` 还接收必填 `reason`，用于后续审计。真实实现应先校验对象归属，再在 IdempotencyExecutor 提供的事务中更新业务状态并创建 Operation/Outbox。原始幂等键不得落库或写日志；仅校验请求头并不等于已实现幂等。OpenAPI 公开写请求的必填 `Idempotency-Key` 契约，默认占位 Hook 继续返回 501。
+
+`OUTBOX.md` 描述已经实现的持久化原语与围栏；Worker 调度循环、真实消息传输和 Provider 仍待接入。
+
 ### `CdkHook`
 
 - `validate(code)`：校验 CDK 并返回安全摘要。

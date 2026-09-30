@@ -118,3 +118,38 @@ async def test_actor_scopes_are_independent_and_bad_keys_rejected(harness):
     with pytest.raises(ApiError) as error:
         await executor.execute(scope="user:one:test", key="bad key", payload={}, command=command)
     assert error.value.code == "INVALID_IDEMPOTENCY_KEY"
+
+
+@pytest.mark.parametrize("body,status", [(None, None), (None, 202), ([], 202), ({}, None)])
+async def test_expired_incomplete_receipt_is_never_reexecuted(harness, body, status):
+    from datetime import timedelta
+
+    from inviteflow.persistence.models import utcnow
+    from inviteflow.security import digest
+
+    app, _, database = harness
+    secret = app.state.settings.session_secret.get_secret_value()
+    executor = IdempotencyExecutor(database, secret)
+    async with database.sessions.begin() as db:
+        db.add(
+            IdempotencyRequest(
+                scope="internal:test",
+                key_digest=digest(secret, "idempotency-key", "old-request"),
+                request_digest="a" * 64,
+                response_status=status,
+                response_body=body,
+                created_at=utcnow() - timedelta(days=2),
+                expires_at=utcnow() - timedelta(days=1),
+            )
+        )
+
+    async def forbidden(db):
+        raise AssertionError("Incomplete receipt must not execute")
+
+    with pytest.raises(ApiError) as error:
+        await executor.execute(
+            scope="internal:test", key="old-request", payload={}, command=forbidden
+        )
+    assert error.value.code == "IDEMPOTENCY_IN_PROGRESS"
+    async with database.sessions() as db:
+        assert await db.scalar(select(func.count()).select_from(IdempotencyRequest)) == 1

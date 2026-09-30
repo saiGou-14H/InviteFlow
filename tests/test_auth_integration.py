@@ -53,8 +53,8 @@ async def harness():
     async with database.sessions.begin() as db:
         await db.execute(
             text(
-                "TRUNCATE outbox_messages, operations, staff_sessions, public_sessions, staff_accounts, "
-                "audit_logs, login_rate_limits, idempotency_requests CASCADE"
+                "TRUNCATE outbox_messages, operations, staff_sessions, public_sessions, "
+                "staff_accounts, audit_logs, login_rate_limits, idempotency_requests CASCADE"
             )
         )
         db.add(StaffAccount(username_normalized="admin", password_hash=hash_password(PASSWORD)))
@@ -67,7 +67,11 @@ async def user_session(client):
     response = await client.post("/api/v1/public/sessions", json={}, headers={"Origin": ORIGIN})
     assert response.status_code == 200, response.text
     data = response.json()["data"]
-    return data, {"Origin": ORIGIN, "X-CSRF-Token": data["csrf_token"]}
+    return data, {
+        "Origin": ORIGIN,
+        "X-CSRF-Token": data["csrf_token"],
+        "Idempotency-Key": "test-command-key",
+    }
 
 
 async def admin_session(client):
@@ -78,7 +82,11 @@ async def admin_session(client):
     )
     assert response.status_code == 200, response.text
     data = response.json()["data"]
-    return data, {"Origin": ORIGIN, "X-CSRF-Token": data["csrf_token"]}
+    return data, {
+        "Origin": ORIGIN,
+        "X-CSRF-Token": data["csrf_token"],
+        "Idempotency-Key": "test-command-key",
+    }
 
 
 async def test_real_session_hashes_reuse_and_readiness(harness):
@@ -229,8 +237,8 @@ async def test_real_actor_passed_to_hook(harness):
     called = []
 
     class TestHook:
-        async def claim_batch(self, codes, *, actor_id):
-            called.append(actor_id)
+        async def claim_batch(self, codes, *, actor_id, idempotency_key):
+            called.append((actor_id, idempotency_key))
             return {"test_only": True}
 
     app.state.settings.business_hooks_enabled = True
@@ -239,7 +247,7 @@ async def test_real_actor_passed_to_hook(harness):
         "/api/v1/claims/batches", json={"codes": ["TEST"]}, headers=headers
     )
     assert response.status_code == 202
-    assert called == [data["actor_id"]]
+    assert called == [(data["actor_id"], headers["Idempotency-Key"])]
 
 
 async def test_admin_cli_create_reset_revoke(harness, monkeypatch):

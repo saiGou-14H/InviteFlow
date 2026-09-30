@@ -26,6 +26,7 @@ def authorized_client(client):
     client.app.dependency_overrides[require_admin] = lambda: Actor(
         actor_id, actor_id, Role.ADMIN, "test"
     )
+    client.headers["Idempotency-Key"] = "test-command-key"
     return client
 
 
@@ -128,3 +129,81 @@ def test_origin_required_even_for_session_creation(client):
     response = client.post("/api/v1/public/sessions", json={})
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "ORIGIN_REJECTED"
+
+
+BUSINESS_COMMANDS = [
+    ("/claims/batches", {"codes": ["TEST"]}),
+    ("/claims/{id}/confirm", None),
+    ("/claims/{id}/retry", {"reason": "test"}),
+    ("/claims/{id}/followup", None),
+    ("/admin/cdk-batches", {"quantity": 1}),
+    ("/admin/claims/{id}/reconcile", {"reason": "test"}),
+]
+
+
+@pytest.mark.parametrize("path,payload", BUSINESS_COMMANDS)
+@pytest.mark.parametrize("key,status", [(None, 422), ("bad key", 400), ("x" * 129, 400)])
+def test_command_key_is_required_and_validated(authorized_client, path, payload, key, status):
+    del authorized_client.headers["Idempotency-Key"]
+    headers = {} if key is None else {"Idempotency-Key": key}
+    response = authorized_client.post(
+        "/api/v1" + path.format(id="00000000-0000-0000-0000-000000000001"),
+        json=payload,
+        headers=headers,
+    )
+    assert response.status_code == status
+    assert "bad key" not in response.text
+
+
+def test_duplicate_key_headers_rejected(authorized_client):
+    del authorized_client.headers["Idempotency-Key"]
+    response = authorized_client.post(
+        "/api/v1/claims/batches",
+        json={"codes": ["TEST"]},
+        headers=[("Idempotency-Key", "first-key"), ("Idempotency-Key", "second-key")],
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "INVALID_IDEMPOTENCY_KEY"
+
+
+def test_openapi_declares_required_command_header_and_read_does_not_need_it(authorized_client):
+    schema = authorized_client.get("/openapi.json").json()
+    for path, _ in BUSINESS_COMMANDS:
+        path = "/api/v1" + path.replace("{id}", "{claim_id}")
+        header = next(
+            p for p in schema["paths"][path]["post"]["parameters"] if p["name"] == "Idempotency-Key"
+        )
+        assert header["in"] == "header" and header["required"]
+    del authorized_client.headers["Idempotency-Key"]
+    assert (
+        authorized_client.get("/api/v1/claims/00000000-0000-0000-0000-000000000001").status_code
+        == 501
+    )
+
+
+@pytest.mark.parametrize("path,payload", BUSINESS_COMMANDS)
+def test_keys_and_reconcile_reason_reach_trusted_hook(authorized_client, path, payload):
+    calls = []
+
+    class Capture:
+        def __getattr__(self, name):
+            async def capture(*args, **kwargs):
+                calls.append((name, kwargs))
+                return {"test_only": True}
+
+            return capture
+
+    authorized_client.app.state.settings.business_hooks_enabled = True
+    authorized_client.app.state.hooks.claims = Capture()
+    authorized_client.app.state.hooks.admin = Capture()
+    response = authorized_client.post(
+        "/api/v1" + path.format(id="00000000-0000-0000-0000-000000000001"),
+        json=payload,
+    )
+    assert response.status_code == 202
+    name, kwargs = calls[0]
+    assert kwargs["idempotency_key"] == "test-command-key"
+    assert kwargs["actor_id"] == "00000000-0000-0000-0000-000000000001"
+    if name in {"retry", "reconcile_claim"}:
+        assert kwargs["reason"] == "test"
+    assert "test-command-key" not in response.text
