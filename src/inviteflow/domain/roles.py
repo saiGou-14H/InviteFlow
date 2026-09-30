@@ -1,7 +1,7 @@
 """Product roles; internal workers and providers are not user roles.
 
-This enumeration declares the supported role contract only. Session authentication
-and authorization are still unimplemented in the application skeleton.
+Sessions and route-level role checks are implemented in inviteflow.auth.
+Business Hooks remain responsible for object ownership and operation permissions.
 """
 
 from enum import Enum

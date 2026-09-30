@@ -1,0 +1,60 @@
+name: inviteflow
+
+x-api-environment: &api-environment
+  INVITEFLOW_DATABASE_URL: postgresql+asyncpg://inviteflow:${INVITEFLOW_POSTGRES_PASSWORD:?Set a URL-safe database password}@postgres:5432/inviteflow
+  INVITEFLOW_SESSION_SECRET: ${INVITEFLOW_SESSION_SECRET:?Set a random session secret}
+  INVITEFLOW_ENVIRONMENT: ${INVITEFLOW_ENVIRONMENT:-development}
+  INVITEFLOW_PUBLIC_ORIGIN: ${INVITEFLOW_PUBLIC_ORIGIN:-http://127.0.0.1:8088}
+  INVITEFLOW_COOKIE_SECURE: ${INVITEFLOW_COOKIE_SECURE:-false}
+  INVITEFLOW_BUSINESS_HOOKS_ENABLED: 'false'
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: inviteflow
+      POSTGRES_PASSWORD: ${INVITEFLOW_POSTGRES_PASSWORD:?Set a URL-safe database password}
+      POSTGRES_DB: inviteflow
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U inviteflow -d inviteflow']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build: .
+    environment: *api-environment
+    command: [alembic, upgrade, head]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  api:
+    build: .
+    environment: *api-environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, python, '-c', 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/readyz", timeout=3)']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+
+  web:
+    build: ./frontend
+    ports:
+      - '127.0.0.1:${INVITEFLOW_WEB_PORT:-8088}:8080'
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+
+volumes:
+  postgres_data:

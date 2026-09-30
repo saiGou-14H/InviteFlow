@@ -59,6 +59,9 @@ cd frontend && npm run typecheck && npm test && npm run build
 ## 文档与边界
 
 - [会话、权限与配置](docs/AUTHENTICATION.md)
+- [数据库幂等执行契约](docs/IDEMPOTENCY.md)
+- [容器启动与生产边界](docs/DEPLOYMENT.md)
+- [本轮验收记录](docs/VERIFICATION.md)
 - [Hook 契约与后续实现顺序](docs/HOOK_CONTRACTS.md)
 - [前端开发说明](frontend/README.md)
 
