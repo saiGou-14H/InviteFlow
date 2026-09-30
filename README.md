@@ -8,7 +8,9 @@ Python 邀请兑换平台，产品角色仅有 **user（用户）** 和 **admin�
 
 前端位于 `frontend/`，提供 Vue 3 + TypeScript 用户页和管理员页，中英文界面及响应式布局；登录、会话恢复和退出连接真实后端。业务表单遇到 501 明确提示 Hook 尚未实现。
 
-**尚未实现真实 CDK、邮箱分配、Claim 状态机、邀请或奖励动作、持久 Worker、Outbox、WebSocket。** 现有业务端点先验证会话/权限，再调用 Hook；认证通过但未接入时返回 `501 HOOK_NOT_IMPLEMENTED`。不得将前端表单、接口契约或测试夹具描述为业务成功。
+**尚未实现真实 CDK、邮箱分配、Claim 状态机、邀请或奖励动作、持久 Worker 调度、真实消息传输、WebSocket。** Operation/Outbox 数据库模型、永久命令身份、租约与 generation 围栏、未知结果隔离已经实现；过期租约不会自动重发。维护 CLI 支持默认只读预览及显式有界删除，保留操作和审计记录。
+
+六个业务写入口要求 `Idempotency-Key` 并传给 Hook；仅入口验证不代表已实现业务去重。现有业务端点先验证会话/权限，再调用 Hook；认证和请求验证通过但未接入时返回 `501 HOOK_NOT_IMPLEMENTED`。不得将前端表单、接口契约或测试夹具描述为业务成功。
 
 ## 本地开发
 
@@ -60,6 +62,8 @@ cd frontend && npm run typecheck && npm test && npm run build
 
 - [会话、权限与配置](docs/AUTHENTICATION.md)
 - [数据库幂等执行契约](docs/IDEMPOTENCY.md)
+- [Operation / Outbox 与租约围栏](docs/OUTBOX.md)
+- [维护清理与只读预览](docs/MAINTENANCE.md)
 - [容器启动与生产边界](docs/DEPLOYMENT.md)
 - [本轮验收记录](docs/VERIFICATION.md)
 - [Hook 契约与后续实现顺序](docs/HOOK_CONTRACTS.md)

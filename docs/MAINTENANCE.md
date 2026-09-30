@@ -93,5 +93,4 @@
 .venv/bin/pytest tests/test_maintenance.py -m integration
 ```
 
-未配置测试 URL 时集成测试跳过；跳过不代表真实 PG 已验证。不要为运行测试
-自行创建数据库、使用生产 URL 或解除共享 fixture 的数据库安全检查。
+未配置测试 URL 时集成测试跳过；跳过不代表真实 PG 已验证。只允许使用专用、可清空的测试数据库，不得使用生产 URL 或解除共享 fixture 的数据库安全检查。

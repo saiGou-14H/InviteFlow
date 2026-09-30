@@ -8,7 +8,7 @@
 - PostgreSQL transaction advisory lock 串行保护同 scope+key；另有唯一约束。并发在途返回 409 IDEMPOTENCY_IN_PROGRESS。
 - 同 key 同内容返回已提交安全回执；不同内容返回 409 IDEMPOTENCY_CONFLICT。不同 actor 的 scope 独立。
 - 命令收到同一个 AsyncSession，数据变化与回执在同一个事务提交；异常一起回滚。
-- 只缓存 2xx 回执，最大 64 KiB；默认保留 24 小时。超过保留期重用 key 会被视为新命令，业务层还必须使用操作 ID/状态约束防止业务重复。
+- 只缓存 2xx JSON 对象回执，最大 64 KiB、最多 32 层，数字限定于有限且绝对值不超过 `2^53-1` 的范围；使用与 Outbox 相同的 `safe_json.py` 规则，避免 JSONB 规范化膨胀。默认保留 24 小时。完整回执超过保留期后重用 key 可被视为新命令，业务层仍必须使用永久操作 ID/状态约束防止业务重复。
 
 ## 必须遵守
 

@@ -39,8 +39,8 @@ docker compose down
 1. 在已有可信入口配置 TLS，设置真实 HTTPS `INVITEFLOW_PUBLIC_ORIGIN`、`INVITEFLOW_ENVIRONMENT=production`、`INVITEFLOW_COOKIE_SECURE=true`，不直接发布开发服务器。
 2. 为数据库、会话密钥、管理员密码建立独立秘密存储、备份及轮换策略。仓库中 CI/test 字符串只供一次性测试，不得复制为生产凭据。
 3. 当前 Uvicorn 显式不信任代理头；反代下来源登录限流可能共享代理地址。上线前配置严格可信代理边界与边缘 IP 限流，不能简单信任任意 X-Forwarded-For。
-4. 补足会话/限流/幂等旧记录清理、审计归档、监控告警、MFA 评估，以及数据库最小权限和备份恢复演练。
-5. 在独立版本中实现并测试对象归属、CDK 账本、资源租约、业务状态机、Outbox/Worker 与未知结果查证，再接入真实 Provider。
+4. 配置维护 CLI 的外部调度（默认只读，见 `MAINTENANCE.md`）、审计归档、监控告警、MFA 评估，以及数据库最小权限和备份恢复演练。
+5. 在独立版本中实现并测试对象归属、CDK 账本、资源租约和业务状态机；在已提供的 Operation/Outbox 围栏基础上接入 Worker、传输和证据查证，再接入真实 Provider。
 6. 镜像使用版本标签而非内容 digest；生产发布应锁定经过审核的 digest 并执行依赖/镜像漏洞扫描。
 
 ## 验证与 CI
