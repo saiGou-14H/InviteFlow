@@ -192,7 +192,10 @@ async def transition_operation(
     result = _bounded_json(result_body) if result_body is not None else None
     code = _code(error_code) if error_code is not None else None
     operation = await db.scalar(
-        select(Operation).where(Operation.id == operation_id).with_for_update()
+        select(Operation)
+        .where(Operation.id == operation_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     now = await _now(db)
     if (
@@ -240,6 +243,7 @@ async def lease_outbox(
             .order_by(OutboxMessage.available_at, OutboxMessage.created_at, OutboxMessage.id)
             .limit(limit)
             .with_for_update(skip_locked=True)
+            .execution_options(populate_existing=True)
         )
     ).all()
     now = await _now(db)
@@ -270,7 +274,10 @@ async def _owned_message(
 ) -> OutboxMessage:
     _transaction(db)
     message = await db.scalar(
-        select(OutboxMessage).where(OutboxMessage.id == message_id).with_for_update()
+        select(OutboxMessage)
+        .where(OutboxMessage.id == message_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     now = await _now(db)
     if (
@@ -339,6 +346,7 @@ async def quarantine_expired_leases(db: AsyncSession, *, limit: int = 100) -> di
                 .order_by(model.lease_until, model.id)
                 .limit(limit)
                 .with_for_update(skip_locked=True)
+                .execution_options(populate_existing=True)
             )
         ).all()
         now = await _now(db)
@@ -371,7 +379,12 @@ async def resolve_unknown_operation(
     or provider implementation exposes it in this foundation. No requeue occurs.
     """
     _transaction(db)
-    row = await db.scalar(select(Operation).where(Operation.id == operation_id).with_for_update())
+    row = await db.scalar(
+        select(Operation)
+        .where(Operation.id == operation_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     if row is None or row.status != "unknown" or row.generation != expected_generation:
         raise OperationStateError("Unknown operation changed or missing")
     row.status = "succeeded" if confirmed_success else "failed"
