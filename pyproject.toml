@@ -36,6 +36,7 @@ dev = [
 [project.scripts]
 inviteflow-api = "inviteflow.main:run"
 inviteflow-admin = "inviteflow.cli:run"
+inviteflow-maintenance = "inviteflow.maintenance_cli:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     idempotency_ttl_seconds: int = Field(default=86400, ge=60)
     readiness_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
     max_request_bytes: int = Field(default=262144, ge=1024, le=1048576)
+    session_cleanup_retention_seconds: int = Field(default=86400, ge=60, le=31536000)
+    outbox_cleanup_retention_seconds: int = Field(default=604800, ge=60, le=31536000)
 
     @model_validator(mode="after")
     def validate_runtime(self) -> "Settings":
