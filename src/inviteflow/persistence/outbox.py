@@ -6,17 +6,16 @@ automatically. Payloads/results must be safe projections or durable references.
 """
 
 import hashlib
-import json
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import cast
 from uuid import UUID
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from inviteflow.persistence.models import AuditLog, Operation, OutboxMessage
+from inviteflow.safe_json import bounded_json_object
 
 _DIGEST = re.compile(r"[0-9a-f]{64}")
 _TOPIC = re.compile(r"[a-z][a-z0-9_.:-]{0,127}")
@@ -64,15 +63,7 @@ def _transaction(db: AsyncSession) -> None:
 
 
 def _bounded_json(value: dict[str, object]) -> dict[str, object]:
-    if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
-        raise ValueError("A JSON object with string keys is required")
-    try:
-        encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, allow_nan=False)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("Payload must be finite JSON") from exc
-    if len(encoded.encode()) > 65536:
-        raise ValueError("Payload exceeds 64 KiB")
-    return cast(dict[str, object], json.loads(encoded))
+    return bounded_json_object(value)
 
 
 def _code(value: str) -> str:

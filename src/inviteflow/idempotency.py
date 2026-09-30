@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from inviteflow.api.errors import ApiError
 from inviteflow.persistence.database import Database
 from inviteflow.persistence.models import IdempotencyRequest, utcnow
+from inviteflow.safe_json import bounded_json_object
 from inviteflow.security import digest
 
 
@@ -116,11 +117,6 @@ class IdempotencyExecutor:
                 raise RuntimeError("Command must not close the supplied transaction")
             if not 200 <= result.status < 300:
                 raise ValueError("Only accepted/successful database commands may be cached")
-            if not isinstance(result.body, dict):
-                raise ValueError("Idempotency receipt must be a JSON object")
-            encoded = json.dumps(result.body, allow_nan=False)
-            if len(encoded.encode()) > 65536:
-                raise ValueError("Idempotency receipt exceeds 64 KiB")
             row.response_status = result.status
-            row.response_body = json.loads(encoded)
+            row.response_body = bounded_json_object(result.body)
             return result
