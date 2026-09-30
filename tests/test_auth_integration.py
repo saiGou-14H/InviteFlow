@@ -53,7 +53,7 @@ async def harness():
     async with database.sessions.begin() as db:
         await db.execute(
             text(
-                "TRUNCATE staff_sessions, public_sessions, staff_accounts, "
+                "TRUNCATE outbox_messages, operations, staff_sessions, public_sessions, staff_accounts, "
                 "audit_logs, login_rate_limits, idempotency_requests CASCADE"
             )
         )

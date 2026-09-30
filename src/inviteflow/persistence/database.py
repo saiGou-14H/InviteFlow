@@ -5,7 +5,7 @@ from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import ArgumentError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-EXPECTED_REVISION = "0001_foundation"
+EXPECTED_REVISION = "0002_operations_outbox"
 
 __all__ = ["Database", "EXPECTED_REVISION"]
 
