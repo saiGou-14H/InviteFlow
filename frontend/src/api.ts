@@ -9,6 +9,17 @@ export type Capabilities = { service: string; version: string; implemented: stri
 export type ProbeState = 'ok' | 'unavailable' | 'error'
 export type RequestOptions = { method?: 'GET' | 'POST'; body?: unknown; role?: Role; command?: boolean; anonymous?: boolean }
 
+/** getRandomValues also works on explicit HTTP/IP deployments; randomUUID does not. */
+function commandKey(): string {
+  try {
+    const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16))
+    bytes[6] = (bytes[6]! & 0x0f) | 0x40
+    bytes[8] = (bytes[8]! & 0x3f) | 0x80
+    const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+  } catch { throw new ApiFailure('unavailable') }
+}
+
 /** No token, cookie, credential, code, or raw server error is persisted or logged. */
 export class ApiClient {
   private readonly tokens: Partial<Record<Role, string>> = {}
@@ -38,7 +49,7 @@ export class ApiClient {
         if (!token) throw new ApiFailure('unauthorized', 401)
         headers['X-CSRF-Token'] = token
       }
-      if (options.command && !exempt) headers['Idempotency-Key'] = crypto.randomUUID()
+      if (options.command && !exempt) headers['Idempotency-Key'] = commandKey()
     }
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), this.timeoutMs)

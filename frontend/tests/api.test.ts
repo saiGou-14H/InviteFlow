@@ -10,7 +10,7 @@ function setup() {
   const onSession = vi.fn()
   return { fetcher, onSession, api: new ApiClient(fetcher, onSession) }
 }
-afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers() })
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
 
 describe('session and CSRF contract', () => {
   it('creates public sessions with {}, browser Origin, and same-origin credentials', async () => {
@@ -45,6 +45,29 @@ describe('session and CSRF contract', () => {
     expect(adminHeaders['Idempotency-Key']).not.toBe(userHeaders['Idempotency-Key'])
     expect(onSession).toHaveBeenCalledWith('user', { role: 'user', actor_id: id })
     expect(onSession.mock.calls.some(call => JSON.stringify(call).includes('csrf'))).toBe(false)
+  })
+  it('sends distinct command UUIDs on HTTP origins without crypto.randomUUID', async () => {
+    const getRandomValues = crypto.getRandomValues.bind(crypto)
+    vi.stubGlobal('crypto', { getRandomValues })
+    const weakRandom = vi.spyOn(Math, 'random')
+    const { fetcher, api } = setup()
+    fetcher.mockResolvedValueOnce(session('user')).mockImplementation(async () => json({}, 202))
+    await api.restore('user')
+    await api.request('/claims/batches', { method: 'POST', role: 'user', command: true })
+    await api.request('/claims/batches', { method: 'POST', role: 'user', command: true })
+    const keys = fetcher.mock.calls.slice(1).map(call => (call[1]?.headers as Record<string, string>)['Idempotency-Key'])
+    expect(keys[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    expect(keys[1]).not.toBe(keys[0])
+    expect(weakRandom).not.toHaveBeenCalled()
+  })
+  it('rejects commands safely when secure random generation is unavailable', async () => {
+    vi.stubGlobal('crypto', { getRandomValues: () => { throw new Error('PRIVATE_RUNTIME_DETAIL') } })
+    const { fetcher, api } = setup()
+    fetcher.mockResolvedValueOnce(session('user'))
+    await api.restore('user')
+    await expect(api.request('/claims/batches', { method: 'POST', role: 'user', command: true }))
+      .rejects.toMatchObject({ key: 'unavailable', message: 'unavailable' })
+    expect(fetcher).toHaveBeenCalledTimes(1)
   })
   it('never sends a mutation without the required role token', async () => {
     const { fetcher, api } = setup()
