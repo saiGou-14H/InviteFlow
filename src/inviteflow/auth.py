@@ -197,13 +197,17 @@ async def enforce_login_limit(request: Request, username: str) -> None:
     exceeded = False
     async with database.sessions.begin() as db:
         for scope in scopes:
-            await db.execute(
+            # A no-op conflict update locks the existing window atomically with
+            # lookup. Maintenance must not delete it between INSERT and SELECT.
+            row = await db.scalar(
                 insert(LoginRateLimit)
                 .values(scope_digest=scope, window_started_at=now, attempts=0)
-                .on_conflict_do_nothing(index_elements=[LoginRateLimit.scope_digest])
-            )
-            row = await db.scalar(
-                select(LoginRateLimit).where(LoginRateLimit.scope_digest == scope).with_for_update()
+                .on_conflict_do_update(
+                    index_elements=[LoginRateLimit.scope_digest],
+                    set_={"scope_digest": LoginRateLimit.scope_digest},
+                )
+                .returning(LoginRateLimit)
+                .execution_options(populate_existing=True)
             )
             assert row is not None
             if now >= row.window_started_at + timedelta(seconds=settings.login_window_seconds):
