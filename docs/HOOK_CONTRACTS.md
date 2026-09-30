@@ -6,7 +6,7 @@
 
 产品角色只允许 `user`（用户）与 `admin`（管理员），定义在 `src/inviteflow/domain/roles.py`。用户通过自己的会话访问领取任务，管理员通过管理入口处理运营和售后。未登录浏览是用户访问状态，Worker、Scheduler、Provider 都是内部组件。
 
-身份认证、会话、CSRF 和对象级授权尚未实现。Hook 参数中的 `actor_id` 必须在后续实现中由可信会话提供，不能信任客户端指定的角色或固定占位字符串。
+用户匿名会话、管理员认证、入口角色鉴权和 CSRF/Origin 已实现，详见 `AUTHENTICATION.md`。Hook 参数中的 `actor_id` 现由可信服务端会话提供，已移除固定身份字符串。真实业务的 Claim/CDK 对象归属与预算授权仍须在 Hook/应用服务中实现，不能只凭入口角色授权。
 
 经销商专属功能和预算已取消；原有用户与管理员的业务权限和次数规则保持独立。
 
@@ -78,7 +78,7 @@ Provider 不直接返回“HTTP 200 即成功”，而是返回：
 - `POST /api/v1/admin/cdk-batches`
 - `POST /api/v1/admin/claims/{claim_id}/reconcile`
 
-业务端点当前只验证请求模型，然后调用对应 Hook；默认 Hook 会返回 `501`。下一阶段实现时，API 路由保持薄层，事务、幂等、PostgreSQL 锁、Outbox 和 Worker 调度放在应用服务中。
+业务端点先验证会话、角色、写请求来源和 CSRF，再验证请求模型并调用对应 Hook；未认证/越权分别拒绝，默认 Hook 返回 `501`。`business_hooks_enabled=false` 强制使用占位 Hook；设为 true 仍需明确安装真实实现。幂等执行基础仅适用于同一数据库事务内的命令，不会自动包裹外部请求或这些尚未实现的 Hook。下一阶段应把业务事务、幂等、PostgreSQL 锁、Outbox 和 Worker 调度放在应用服务中。
 
 ## 推荐实现顺序
 

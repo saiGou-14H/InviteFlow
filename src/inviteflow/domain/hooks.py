@@ -47,7 +47,9 @@ class ClaimHook(Protocol):
 
 
 class AdminHook(Protocol):
-    async def create_cdk_batch(self, payload: dict[str, Any], *, actor_id: str) -> dict[str, Any]: ...
+    async def create_cdk_batch(
+        self, payload: dict[str, Any], *, actor_id: str
+    ) -> dict[str, Any]: ...
 
     async def reconcile_claim(self, claim_id: UUID, *, actor_id: str) -> dict[str, Any]: ...
 

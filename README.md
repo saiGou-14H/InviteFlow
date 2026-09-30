@@ -1,81 +1,69 @@
 # InviteFlow（邀程）
 
-InviteFlow 是一个围绕邀请凭证、邮箱资源、异步任务和售后操作构建的平台骨架。
+Python 邀请兑换平台，产品角色仅有 **user（用户）** 和 **admin（管理员）**。访客是用户访问状态；Worker、Scheduler、Provider 是内部组件，不增加产品角色。经销商分支及专属次数预算已取消。
 
-当前版本只完成 Python 后端工程初始化和业务 Hook 接口，**没有实现真实 CDK、邮箱、邀请、奖励或第三方平台操作**。所有尚未接入的业务入口会返回 `501 HOOK_NOT_IMPLEMENTED`，避免把未确认的上游协议写死。
+## 当前状态
 
-## 产品角色
+已实现 PostgreSQL 持久化基础、Alembic 迁移、用户匿名会话、管理员认证/退出/会话撤销、CSRF/Origin 校验、登录限流、真实 readiness、请求大小限制及安全错误响应。后端 Python 3.10+，部署配置选用 Python 3.13。依赖由 `uv.lock` 锁定，开发与测试使用项目独立 `.venv`。
 
-产品只定义 `user`（用户）和 `admin`（管理员）两个角色：
+前端位于 `frontend/`，提供 Vue 3 + TypeScript 用户页和管理员页，中英文界面及响应式布局；登录、会话恢复和退出连接真实后端。业务表单遇到 501 明确提示 Hook 尚未实现。
 
-- 用户：使用 CDK 领取邮箱，查看自己的任务，提交验证、重试和补发。
-- 管理员：管理 CDK、邮箱资源、全部任务、售后、配置和审计。
+**尚未实现真实 CDK、邮箱分配、Claim 状态机、邀请或奖励动作、持久 Worker、Outbox、WebSocket。** 现有业务端点先验证会话/权限，再调用 Hook；认证通过但未接入时返回 `501 HOOK_NOT_IMPLEMENTED`。不得将前端表单、接口契约或测试夹具描述为业务成功。
 
-未登录浏览是用户的访问状态；Worker、Scheduler 和 Provider 是内部组件，不是产品角色。原经销商专属入口和三次重发预算已取消，不转移给用户或额外叠加到管理员预算。
+## 本地开发
 
-当前代码只声明角色契约，身份认证、会话和对象级授权仍未实现；路由内的 actor_id 仍是占位值。
-
-## 当前技术基线
-
-- Python 3.10+
-- FastAPI + Pydantic v2
-- Uvicorn
-- 预留 SQLAlchemy/asyncpg/Alembic 持久化扩展
-- 预留 HTTPX 外部 Provider 扩展
-- 前端和数据库尚未接入
-
-## 本地运行
+准备 PostgreSQL（请使用独立开发库），安装 uv 后：
 
 ```bash
-python -m venv .venv
-. .venv/bin/activate
-python -m pip install -e '.[dev]'
-inviteflow-api
+uv sync --frozen --extra dev
+cp .env.example .env
+# 编辑 .env：数据库 URL、随机 session_secret、浏览器 public_origin
+# 此处从环境传递给 Alembic；API 也支持从 .env 读取配置
+set -a; . ./.env; set +a
+uv run alembic upgrade head
+uv run inviteflow-admin create admin
+uv run inviteflow-api
 ```
 
-默认监听 `127.0.0.1:8000`。
+密码由隐藏终端输入，无内置管理员/默认密码。API 默认监听 `127.0.0.1:8000`。
 
-也可以直接运行：
+另开终端：
 
 ```bash
-uvicorn inviteflow.app:create_app --factory --reload
+cd frontend
+npm ci
+npm run dev
 ```
 
-健康检查：
+前端 `http://127.0.0.1:5173`，用户页 `/`，管理员页 `/admin`。本地配置必须为 `INVITEFLOW_PUBLIC_ORIGIN=http://127.0.0.1:5173`；仅本地 HTTP 使用 `INVITEFLOW_COOKIE_SECURE=false`。生产环境必须 HTTPS 和 Secure Cookie。
+
+## 基础端点
+
+- `GET /healthz`：进程存活。
+- `GET /readyz`：数据库连通且迁移版本匹配才返回 200，否则 503。
+- `GET /api/v1/capabilities`：基础能力、两角色及保留的业务 Hook；implemented 仍不声明未实现业务。
+- `/api/v1/public/sessions`、`/public/session`、`/public/logout`：用户会话。
+- `/api/v1/staff/login`、`/staff/session`、`/staff/logout`：管理员会话。
+
+## 测试
 
 ```bash
-curl http://127.0.0.1:8000/healthz
-curl http://127.0.0.1:8000/readyz
-curl http://127.0.0.1:8000/api/v1/capabilities
+uv run ruff check src tests
+uv run mypy src
+uv run pytest
+cd frontend && npm run typecheck && npm test && npm run build
 ```
 
-## Hook 设计
+数据库集成测试需 `INVITEFLOW_TEST_DATABASE_URL` 指向已迁移、可清空的 `inviteflow_test` 库（仅接受测试主机名/loopback）。**测试会清空该测试库的基础表，禁止指定生产库。** 未配置时集成测试明确跳过，不能当作 PostgreSQL 集成验收通过。
 
-后续业务实现从以下接口接入：
+## 文档与边界
 
-- `CdkHook`：CDK 校验、预约、消耗、释放和吊销
-- `ResourceHook`：邮箱资源领取、清理、健康探测和隔离
-- `ClaimHook`：领取批次、确认、重试、补发和状态查询
-- `AdminHook`：管理员发卡、任务处理、批量售后和系统操作
-- `InvitationProvider`：外部邀请平台的探测、处理、查证和资源释放
+- [会话、权限与配置](docs/AUTHENTICATION.md)
+- [Hook 契约与后续实现顺序](docs/HOOK_CONTRACTS.md)
+- [前端开发说明](frontend/README.md)
 
-Hook 接口只表达业务边界，不假设真实上游的 API、账号格式、邮件供应商或奖励规则。实现后应把 PostgreSQL 事务、Outbox、Worker、幂等键和结果不明处理放在服务层，不要在 FastAPI 路由中直接发起长时间外部请求。
+完整产品级设计稿目前保留在工作区 `reports/CODEX_INVITATION_DEVELOPMENT_DESIGN.zh-CN.md`（仓库外，1.1 两角色版）。实际实现状态以本仓库代码及测试为准。
 
-## 目录
+角色入口鉴权已实现；未来业务 Hook 必须自行执行 Claim/CDK 对象归属、次数预算及状态校验。`business_hooks_enabled=false` 强制占位实现，改为 true 不会自动接入上游。
 
-```text
-src/inviteflow/
-├── api/          FastAPI 路由、请求模型和依赖
-├── domain/       领域模型、Hook 协议和业务错误
-├── providers/    外部 Provider 协议
-└── workers/      Worker 执行 Hook 的扩展点
-```
-
-详细功能设计见 [`docs/HOOK_CONTRACTS.md`](docs/HOOK_CONTRACTS.md)。完整的产品级开发设计稿保留在工作区的 `reports/CODEX_INVITATION_DEVELOPMENT_DESIGN.zh-CN.md`。
-
-## 开发约束
-
-1. 尚未核验的真实业务规则必须通过接口和配置隔离。
-2. 外部请求超时不得直接当作失败；需要支持 `unknown` 和后续查证。
-3. 业务状态、权益和预算最终以 PostgreSQL 为准；Redis 只做辅助能力。
-4. 每完成一个独立功能并通过验证后，按功能创建本地 Git 提交；不自动推送。
+后续外部请求应由事务 Outbox 与 Worker 执行，结果未知必须查证，不得盲目重发、返还 CDK 或回池。每完成一个独立功能并通过验证后创建本地 Git 提交；不自动推送。
